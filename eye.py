@@ -11,8 +11,12 @@ face_mesh = mp_face_mesh.FaceMesh(refine_landmarks=True)
 cam = cv2.VideoCapture(0)
 
 # Set the scroll speed (higher for faster smoothness)
-scroll_step = 25  # Larger value for faster scrolling
+scroll_step = 20  # Larger value for faster scrolling
 scroll_delay = 0.01  # Shorter delay for smoother, faster scroll
+
+# Scroll thresholds (adjust to define the neutral zone)
+scroll_up_threshold = 0.3  # Looking up if below this value
+scroll_down_threshold = 0.5  # Looking down if above this value
 
 # Function to calculate the vertical position of the eyeball (pupil) relative to the eye's top and bottom borders
 def calculate_vertical_position(eye_landmarks, window_h):
@@ -58,14 +62,16 @@ while True:
         vertical_position_left_eye = calculate_vertical_position(left_eye_landmarks, window_h)
 
         # Perform scrolling based on the vertical position of the left eye's pupil
-        if vertical_position_left_eye < 0.4:
+        if vertical_position_left_eye < scroll_up_threshold:
             print("Looking Up - Smooth Scroll Up")
-            pyautogui.scroll(scroll_step)  # Scroll up in larger steps
+            pyautogui.scroll(-scroll_step)  # Scroll up
             time.sleep(scroll_delay)  # Short delay for smooth scrolling
-        elif vertical_position_left_eye > 0.6:
+        elif vertical_position_left_eye > scroll_down_threshold:
             print("Looking Down - Smooth Scroll Down")
-            pyautogui.scroll(-scroll_step)  # Scroll down in larger steps
+            pyautogui.scroll(scroll_step)  # Scroll down
             time.sleep(scroll_delay)  # Short delay for smooth scrolling
+        else:
+            print("Neutral Zone - No Scrolling")  # No action in the neutral zone
 
         # Draw circles on the left and right eye landmarks
         for idx in left_eye_indices:
