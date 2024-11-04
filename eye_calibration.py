@@ -12,9 +12,9 @@ cam = cv2.VideoCapture(0)
 
 # Scroll parameters
 max_scroll_speed = 90  # Maximum scroll step
-min_scroll_speed = 20   # Minimum scroll step
-scroll_delay = 0.01     # Shorter delay for smoother scrolling
-neutral_zone = 0.05     # Buffer zone for no scrolling
+min_scroll_speed = 20  # Minimum scroll step
+scroll_delay = 0.01    # Shorter delay for smoother scrolling
+buffer_zone = 0.1     # Define a larger buffer around the neutral zone
 
 # Sensitivity factor for scroll speed
 sensitivity_factor = 1.5
@@ -25,9 +25,9 @@ right_eye_indices = [362, 385, 387, 263, 373, 380]
 
 # Function to calculate the vertical position of the pupil normalized between 0 and 1
 def calculate_normalized_position(eye_landmarks, window_h):
-    top_of_eye = int(eye_landmarks[1].y * window_h)  # Top border of the eye
-    bottom_of_eye = int(eye_landmarks[4].y * window_h)  # Bottom border of the eye
-    pupil_y = int(eye_landmarks[0].y * window_h)  # Pupil's Y position
+    top_of_eye = int(eye_landmarks[1].y * window_h)
+    bottom_of_eye = int(eye_landmarks[4].y * window_h)
+    pupil_y = int(eye_landmarks[0].y * window_h)
 
     # Normalize the pupil position
     if bottom_of_eye != top_of_eye:
@@ -46,9 +46,9 @@ def smooth_eye_position(new_position, window_size=5):
     return sum(eye_positions) / len(eye_positions)
 
 # Function to calculate dynamic scroll speed
-def calculate_scroll_speed(relative_position, neutral_threshold, max_speed, min_speed):
-    distance_from_neutral = abs(relative_position - neutral_threshold)
-    normalized_distance = min(distance_from_neutral / 0.5, 1.0)  # Normalize the distance (0 to 1)
+def calculate_scroll_speed(relative_position, threshold, max_speed, min_speed):
+    distance_from_threshold = abs(relative_position - threshold)
+    normalized_distance = min(distance_from_threshold / 0.5, 1.0)  # Normalize the distance (0 to 1)
     dynamic_speed = min_speed + (max_speed - min_speed) * normalized_distance
     return dynamic_speed * sensitivity_factor
 
@@ -71,7 +71,7 @@ def get_current_normalized_position():
         print("Warning: Face landmarks not detected.")
         return None
 
-# Calibration function to set personalized thresholds
+# Calibration function to set personalized thresholds and neutral zone
 def calibrate_user_thresholds():
     print("Calibration started: Please follow instructions.")
     
@@ -80,35 +80,39 @@ def calibrate_user_thresholds():
     neutral_position = get_current_normalized_position()
     if neutral_position is None:
         print("Error: Unable to capture neutral position. Please try again.")
-        return None, None
+        return None, None, None
 
     # Step 2: Capture upward position
     input("Look up as far as comfortable and press Enter.")
     up_position = get_current_normalized_position()
     if up_position is None:
         print("Error: Unable to capture upward position. Please try again.")
-        return None, None
+        return None, None, None
 
     # Step 3: Capture downward position
     input("Look down as far as comfortable and press Enter.")
     down_position = get_current_normalized_position()
     if down_position is None:
         print("Error: Unable to capture downward position. Please try again.")
-        return None, None
+        return None, None, None
 
     # Define personalized thresholds based on captured values
     personalized_scroll_up_threshold = neutral_position + (up_position - neutral_position) * 0.7
     personalized_scroll_down_threshold = neutral_position + (down_position - neutral_position) * 0.7
     
-    print("Calibration complete. Thresholds set for this session.")
+    # Define neutral zone with a buffer around the neutral position
+    neutral_upper_limit = neutral_position + buffer_zone
+    neutral_lower_limit = neutral_position - buffer_zone
+
+    print("Calibration complete. Thresholds and neutral zone set for this session.")
     
-    return personalized_scroll_up_threshold, personalized_scroll_down_threshold
+    return personalized_scroll_up_threshold, personalized_scroll_down_threshold, (neutral_lower_limit, neutral_upper_limit)
 
 # Run calibration and get personalized thresholds
-personalized_scroll_up_threshold, personalized_scroll_down_threshold = calibrate_user_thresholds()
+personalized_scroll_up_threshold, personalized_scroll_down_threshold, neutral_zone = calibrate_user_thresholds()
 
 # If calibration failed, exit the program
-if personalized_scroll_up_threshold is None or personalized_scroll_down_threshold is None:
+if personalized_scroll_up_threshold is None or personalized_scroll_down_threshold is None or neutral_zone is None:
     print("Calibration failed. Exiting program.")
     cam.release()
     face_mesh.close()
@@ -141,13 +145,14 @@ while True:
         # Smooth the vertical position to reduce jitter
         smoothed_position = smooth_eye_position(normalized_position_left_eye)
 
-        # Scroll based on the smoothed vertical eye position with personalized thresholds
-        if smoothed_position < (personalized_scroll_up_threshold - neutral_zone):
+        # Scroll based on the smoothed vertical eye position with personalized thresholds and neutral zone
+        neutral_lower_limit, neutral_upper_limit = neutral_zone
+        if smoothed_position < neutral_lower_limit:
             dynamic_scroll_speed = calculate_scroll_speed(smoothed_position, personalized_scroll_up_threshold, max_scroll_speed, min_scroll_speed)
             print(f"Looking Up - Smooth Scroll Up, Speed: {dynamic_scroll_speed}")
             pyautogui.scroll(-int(dynamic_scroll_speed))  # Scroll up with dynamic speed
             time.sleep(scroll_delay)
-        elif smoothed_position > (personalized_scroll_down_threshold + neutral_zone):
+        elif smoothed_position > neutral_upper_limit:
             dynamic_scroll_speed = calculate_scroll_speed(smoothed_position, personalized_scroll_down_threshold, max_scroll_speed, min_scroll_speed)
             print(f"Looking Down - Smooth Scroll Down, Speed: {dynamic_scroll_speed}")
             pyautogui.scroll(int(dynamic_scroll_speed))  # Scroll down with dynamic speed
