@@ -3,7 +3,8 @@ import mediapipe as mp
 import pyautogui
 
 import util
-
+from pynput.mouse import Button, Controller
+mouse = Controller()
 
 
 
@@ -34,6 +35,20 @@ def move_mouse(index_finger_tip):
         pyautogui.moveTo(x, y)
 
 
+def is_left_click(landmarks_list, thumb_index_dist):    # thumb amd index finger should be open rest will be bend
+    return (
+        util.get_angle(landmarks_list[5], landmarks_list[6], landmarks_list[8]) > 90 and
+        util.get_angle(landmarks_list[9], landmarks_list[10], landmarks_list[12]) < 50 and
+        thumb_index_dist > 50)       
+
+def is_right_click(landmarks_list, thumb_index_dist):      # thumb should be straight and both index finger and middle finger should be bend
+    return (
+        util.get_angle(landmarks_list[5], landmarks_list[6], landmarks_list[8]) < 50 and 
+        util.get_angle(landmarks_list[9], landmarks_list[10], landmarks_list[12]) < 50 and
+        thumb_index_dist > 50
+    )
+
+
 
 def detect_gestures(frame, landmarks_list, processed):
     if len(landmarks_list) >= 21:
@@ -44,7 +59,20 @@ def detect_gestures(frame, landmarks_list, processed):
         if thumb_index_dist < 50 and util.get_angle(landmarks_list[5], landmarks_list[6], landmarks_list[8]) > 90:
             move_mouse(index_finger_tip)
 
+     
+        #Left Click
+        elif is_left_click(landmarks_list , thumb_index_dist):
+            mouse.press(Button.left)
+            mouse.release(Button.left)
+            cv2.putText(frame, "Left Click", (50,50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)   # this is only for detecting which click is this 
 
+
+    # Right click
+        elif is_right_click(landmarks_list, thumb_index_dist) :
+            mouse.press(Button.right)
+            mouse.release(Button.right)
+            cv2.putText(frame, "Right Click", (50,50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+         
 
 def main():
     draw = mp.solutions.drawing_utils
