@@ -3,6 +3,7 @@ from pynput.mouse import Button, Controller
 import pyautogui
 import numpy as np
 import time
+from hand_detection import HandDetector  # Import at the top level
 
 class MouseController:
     def __init__(self):
@@ -28,6 +29,14 @@ class MouseController:
         self.previous_gesture = None
         self.gesture_hold_frames = 0
         self.required_hold_frames = 5  # Number of frames to hold a gesture before triggering
+        
+        # For scrolling
+        self.last_scroll_time = 0
+        self.scroll_cooldown = 0.2  # seconds between scroll actions
+        self.scroll_amount = 2  # Number of "clicks" to scroll
+        
+        # Create a single instance of HandDetector to reuse
+        self.hand_detector = HandDetector()
 
     def is_index_finger_only(self, landmarks):
         """Check if only index finger is up and all others are down"""
@@ -44,42 +53,42 @@ class MouseController:
 
     def is_left_click(self, landmarks):
         """
-        Check if gesture is left click (index finger pinched to thumb)
-        This uses the distance between thumb tip and index tip
+        Check if gesture is left click (middle finger pinched to thumb)
+        This uses the distance between thumb tip and middle finger tip
         """
-        # Get landmarks for thumb tip and index tip
+        # Get landmarks for thumb tip and middle tip
         thumb_tip = landmarks[4]
-        index_tip = landmarks[8]
+        middle_tip = landmarks[12]
         
-        # Calculate distance between thumb tip and index tip
-        distance = self.calculate_distance(thumb_tip, index_tip)
+        # Calculate distance between thumb tip and middle tip
+        distance = self.calculate_distance(thumb_tip, middle_tip)
         
         # Check if other fingers are raised
-        middle_raised = self.is_finger_raised(landmarks, 12, 9)  # Middle finger
-        ring_raised = self.is_finger_raised(landmarks, 16, 13)   # Ring finger
-        pinky_raised = self.is_finger_raised(landmarks, 20, 17)  # Pinky finger
+        index_raised = self.is_finger_raised(landmarks, 8, 5)   # Index finger
+        ring_raised = self.is_finger_raised(landmarks, 16, 13)  # Ring finger
+        pinky_raised = self.is_finger_raised(landmarks, 20, 17) # Pinky finger
         
-        # Left click gesture: thumb and index are close, other fingers are raised
-        if distance < 0.05 and middle_raised and ring_raised and pinky_raised:
+        # Left click gesture: thumb and middle are close
+        if distance < 0.05:
             return True
         return False
 
     def is_right_click(self, landmarks):
         """
-        Check if gesture is right click (thumb touches middle finger)
+        Check if gesture is right click (thumb touches ring finger)
         """
         thumb_tip = landmarks[4]
-        middle_tip = landmarks[12]
+        ring_tip = landmarks[16]
         
-        distance = self.calculate_distance(thumb_tip, middle_tip)
+        distance = self.calculate_distance(thumb_tip, ring_tip)
         
         # Check finger positions for right click
-        index_raised = self.is_finger_raised(landmarks, 8, 5)   # Index finger
-        ring_raised = self.is_finger_raised(landmarks, 16, 13)  # Ring finger
-        pinky_raised = self.is_finger_raised(landmarks, 20, 17) # Pinky finger
+        index_raised = self.is_finger_raised(landmarks, 8, 5)    # Index finger
+        middle_raised = self.is_finger_raised(landmarks, 12, 9)  # Middle finger
+        pinky_raised = self.is_finger_raised(landmarks, 20, 17)  # Pinky finger
         
-        # Right click gesture: thumb and middle finger touch, other fingers raised
-        if distance < 0.05 and index_raised and ring_raised and pinky_raised:
+        # Right click gesture: thumb and ring finger touch
+        if distance < 0.05:
             return True
         return False
     
@@ -118,6 +127,18 @@ class MouseController:
                 self.mouse.press(Button.right)
                 self.mouse.release(Button.right)
             self.last_click_time = current_time
+            return True
+        return False
+    
+    def perform_scroll(self, direction="up"):
+        """Perform a scroll action"""
+        current_time = time.time()
+        if current_time - self.last_scroll_time > self.scroll_cooldown:
+            if direction == "up":
+                self.mouse.scroll(0, self.scroll_amount)
+            elif direction == "down":
+                self.mouse.scroll(0, -self.scroll_amount)
+            self.last_scroll_time = current_time
             return True
         return False
 
@@ -227,8 +248,21 @@ class MouseController:
         current_gesture = None
         
         if hand_landmarks:
+            # Use the single instance of HandDetector created in __init__
+            # instead of creating a new one for every frame
+            
+            # Check for thumbs up gesture (scroll up)
+            if self.hand_detector.is_thumbs_up(hand_landmarks.landmark):
+                current_gesture = "Scroll Up"
+                cv2.putText(frame, "Scroll Up Detected", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            
+            # Check for thumbs down gesture (scroll down)
+            elif self.hand_detector.is_thumbs_down(hand_landmarks.landmark):
+                current_gesture = "Scroll Down"
+                cv2.putText(frame, "Scroll Down Detected", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            
             # Check for left click gesture
-            if self.is_left_click(hand_landmarks.landmark):
+            elif self.is_left_click(hand_landmarks.landmark):
                 current_gesture = "Left Click"
                 cv2.putText(frame, "Left Click Detected", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
             
@@ -257,6 +291,20 @@ class MouseController:
                             # Reset counter after click
                             self.gesture_hold_frames = 0
                             return frame, "Right Click"
+                    
+                    elif current_gesture == "Scroll Up":
+                        if self.perform_scroll("up"):
+                            cv2.putText(frame, "Scrolling Up!", (50, 140), 
+                                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                            # Don't reset the counter to allow continuous scrolling
+                            return frame, "Scroll Up"
+                    
+                    elif current_gesture == "Scroll Down":
+                        if self.perform_scroll("down"):
+                            cv2.putText(frame, "Scrolling Down!", (50, 140), 
+                                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                            # Don't reset the counter to allow continuous scrolling
+                            return frame, "Scroll Down"
             else:
                 # Reset counter if gesture changed
                 self.gesture_hold_frames = 0

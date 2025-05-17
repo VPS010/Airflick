@@ -176,7 +176,7 @@ QScrollArea &gt; QWidget &gt; QWidget {
       <property name="geometry">
        <rect>
         <x>0</x>
-        <y>-298</y>
+        <y>0</y>
         <width>312</width>
         <height>928</height>
        </rect>
@@ -235,6 +235,10 @@ QScrollArea &gt; QWidget &gt; QWidget {
           </property>
           <item>
            <widget class="QFrame" name="logoFrame">
+            <property name="styleSheet">
+             <string notr="true">border: 2px ;
+border-radius: 5px;</string>
+            </property>
             <property name="frameShape">
              <enum>QFrame::NoFrame</enum>
             </property>
@@ -261,7 +265,7 @@ QScrollArea &gt; QWidget &gt; QWidget {
               <widget class="QLabel" name="logoLabel">
                <property name="minimumSize">
                 <size>
-                 <width>60</width>
+                 <width>80</width>
                  <height>60</height>
                 </size>
                </property>
@@ -306,7 +310,7 @@ color: #38bdf8;</string>
                 <widget class="QLabel" name="subtitleLabel">
                  <property name="styleSheet">
                   <string notr="true">font-size: 11px;
-color: #94a3b8;
+color: #ffffff;
 font-weight: 500;</string>
                  </property>
                  <property name="text">
@@ -355,7 +359,8 @@ color: #38bdf8;
 font-weight: 600;
 letter-spacing: 1px;
 padding-top: 6px;
-padding-bottom: 6px;</string>
+padding-bottom: 6px;
+border-radius: 5px;</string>
             </property>
             <property name="text">
              <string>CONTROLS</string>
@@ -462,7 +467,8 @@ color: #38bdf8;
 font-weight: 600;
 letter-spacing: 1px;
 padding-top: 6px;
-padding-bottom: 6px;</string>
+padding-bottom: 6px;
+border-radius: 5px;</string>
             </property>
             <property name="text">
              <string>SETTINGS</string>
@@ -474,6 +480,9 @@ padding-bottom: 6px;</string>
           </item>
           <item>
            <widget class="QFrame" name="settingsFrame">
+            <property name="styleSheet">
+             <string notr="true">border-radius: 5px;</string>
+            </property>
             <property name="frameShape">
              <enum>QFrame::NoFrame</enum>
             </property>
@@ -695,7 +704,8 @@ color: #38bdf8;
 font-weight: 600;
 letter-spacing: 1px;
 padding-top: 6px;
-padding-bottom: 6px;</string>
+padding-bottom: 6px;
+border-radius: 5px;</string>
             </property>
             <property name="text">
              <string>HELP</string>
@@ -834,6 +844,12 @@ background-color: #1e293b;</string>
              <horstretch>0</horstretch>
              <verstretch>0</verstretch>
             </sizepolicy>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>80</width>
+             <height>60</height>
+            </size>
            </property>
            <property name="styleSheet">
             <string notr="true">border: none;</string>

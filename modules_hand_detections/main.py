@@ -2,6 +2,7 @@ import sys
 import cv2
 import numpy as np
 import os
+import gc  # Import garbage collector
 from PyQt6.QtWidgets import QApplication, QWidget, QSlider, QMainWindow
 from PyQt6.QtCore import Qt, QTimer, pyqtSlot
 from PyQt6.QtGui import QImage, QPixmap
@@ -27,6 +28,9 @@ class AirFlick(QWidget):
         # Initialize our modules
         self.hand_detector = HandDetector()
         self.mouse_controller = MouseController()
+        
+        # Memory management - use the hand_detector from MouseController to avoid duplicate instances
+        self.mouse_controller.hand_detector = self.hand_detector
         
         # Set default calibration values (no calibration needed)
         self.mouse_controller.calibration_corners = {
@@ -62,6 +66,11 @@ class AirFlick(QWidget):
         self.smoothnessSlider.valueChanged.connect(self.update_smoothness)
         self.smoothnessValue.setText(f"{self.mouse_controller.smooth_factor:.1f}")
         
+        # Setup memory management timer - force garbage collection every 60 seconds
+        self.gc_timer = QTimer()
+        self.gc_timer.timeout.connect(self.force_garbage_collection)
+        self.gc_timer.start(60000)  # Run every 60 seconds
+        
     def start_camera(self):
         if not self.cap:
             self.cap = cv2.VideoCapture(0)
@@ -94,7 +103,15 @@ class AirFlick(QWidget):
         self.is_tracking = False
         self.is_calibrating = False
         self.gestureOutput.setText("Gesture: None")
+        
+        # Force garbage collection when stopping
+        self.force_garbage_collection()
 
+    # Memory management
+    def force_garbage_collection(self):
+        """Force Python garbage collection to free memory"""
+        gc.collect()
+        
     # Calibration methods (commented out but kept for reference)
     """
     def start_calibration(self):
@@ -115,10 +132,15 @@ class AirFlick(QWidget):
             if not ret:
                 return
 
+            # Create a copy to avoid OpenCV memory issues with frame references
+            frame = frame.copy()
             frame = cv2.flip(frame, 1)
             
             # Process frame with hand detector
-            frame, hand_landmarks = self.hand_detector.find_hands(frame)
+            processed_frame, hand_landmarks = self.hand_detector.find_hands(frame)
+            
+            # Let frame go out of scope for garbage collection
+            frame = None
             
             if self.is_tracking: # Only process if tracking is globally enabled
                 if hand_landmarks:
@@ -126,39 +148,43 @@ class AirFlick(QWidget):
                     
                     # Get index finger tip position
                     index_tip = hand_landmark.landmark[self.hand_detector.mp_hands.HandLandmark.INDEX_FINGER_TIP]
-                    index_pos = (int(index_tip.x * frame.shape[1]), int(index_tip.y * frame.shape[0]))
+                    index_pos = (int(index_tip.x * processed_frame.shape[1]), int(index_tip.y * processed_frame.shape[0]))
                     
                     # Get all index finger joints for drawing lines
                     index_dip_lm = hand_landmark.landmark[self.hand_detector.mp_hands.HandLandmark.INDEX_FINGER_DIP]
                     index_pip_lm = hand_landmark.landmark[self.hand_detector.mp_hands.HandLandmark.INDEX_FINGER_PIP]
                     index_mcp_lm = hand_landmark.landmark[self.hand_detector.mp_hands.HandLandmark.INDEX_FINGER_MCP]
                     
-                    dip_pos = (int(index_dip_lm.x * frame.shape[1]), int(index_dip_lm.y * frame.shape[0]))
-                    pip_pos = (int(index_pip_lm.x * frame.shape[1]), int(index_pip_lm.y * frame.shape[0]))
-                    mcp_pos = (int(index_mcp_lm.x * frame.shape[1]), int(index_mcp_lm.y * frame.shape[0]))
+                    dip_pos = (int(index_dip_lm.x * processed_frame.shape[1]), int(index_dip_lm.y * processed_frame.shape[0]))
+                    pip_pos = (int(index_pip_lm.x * processed_frame.shape[1]), int(index_pip_lm.y * processed_frame.shape[0]))
+                    mcp_pos = (int(index_mcp_lm.x * processed_frame.shape[1]), int(index_mcp_lm.y * processed_frame.shape[0]))
                     
-                    # Always move cursor when tracking is active and hand is detected
-                    new_x, new_y = self.mouse_controller.move_mouse_relative(index_tip.x, index_tip.y)
-                    if new_x is not None:
-                        # Check if gesture text was "Hand not detected" and clear it or set to tracking
-                        if self.gestureOutput.text() == "Gesture: Hand not detected":
-                             self.gestureOutput.setText(f"Tracking: Index Finger")
-                        # else, it might be showing a click gesture, so don't overwrite immediately unless it's the default
-                        elif self.gestureOutput.text() != "Gesture: Left Click" and self.gestureOutput.text() != "Gesture: Right Click":
-                             self.gestureOutput.setText(f"Tracking: Index Finger")
-
+                    # Check if using thumbs up/down gesture for scrolling
+                    if self.hand_detector.is_thumbs_up(hand_landmark.landmark) or self.hand_detector.is_thumbs_down(hand_landmark.landmark):
+                        # Skip mouse movement when in scroll mode
+                        pass
+                    else:
+                        # Move cursor when tracking is active, hand is detected, and not in scroll mode
+                        new_x, new_y = self.mouse_controller.move_mouse_relative(index_tip.x, index_tip.y)
+                        if new_x is not None:
+                            # Check if gesture text was "Hand not detected" and clear it or set to tracking
+                            if self.gestureOutput.text() == "Gesture: Hand not detected":
+                                 self.gestureOutput.setText(f"Tracking: Index Finger")
+                            # else, it might be showing a click gesture, so don't overwrite immediately unless it's the default
+                            elif self.gestureOutput.text() != "Gesture: Left Click" and self.gestureOutput.text() != "Gesture: Right Click" and self.gestureOutput.text() != "Gesture: Scroll Up" and self.gestureOutput.text() != "Gesture: Scroll Down":
+                                 self.gestureOutput.setText(f"Tracking: Index Finger")
 
                     # Add visual indicator for active tracking
-                    cv2.circle(frame, index_pos, 15, (0, 255, 0), -1)  # Green circle for active tracking
-                    cv2.putText(frame, "TRACKING", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                    cv2.circle(processed_frame, index_pos, 15, (0, 255, 0), -1)  # Green circle for active tracking
+                    cv2.putText(processed_frame, "TRACKING", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                     
                     # Visualize the finger joints by drawing lines
-                    cv2.line(frame, index_pos, dip_pos, (255, 255, 0), 2)
-                    cv2.line(frame, dip_pos, pip_pos, (255, 255, 0), 2)
-                    cv2.line(frame, pip_pos, mcp_pos, (255, 255, 0), 2)
+                    cv2.line(processed_frame, index_pos, dip_pos, (255, 255, 0), 2)
+                    cv2.line(processed_frame, dip_pos, pip_pos, (255, 255, 0), 2)
+                    cv2.line(processed_frame, pip_pos, mcp_pos, (255, 255, 0), 2)
                     
-                    # Detect clicks
-                    frame, gesture = self.mouse_controller.detect_gestures(frame, hand_landmark)
+                    # Detect gestures (clicks and scrolls)
+                    processed_frame, gesture = self.mouse_controller.detect_gestures(processed_frame, hand_landmark)
                     if gesture:
                         self.gestureOutput.setText(f"Gesture: {gesture}")
                 
@@ -167,10 +193,14 @@ class AirFlick(QWidget):
                     self.gestureOutput.setText("Gesture: Hand not detected") 
             
             # Convert frame to QImage for display
-            rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            rgb_image = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
             h, w, ch = rgb_image.shape
             qt_img = QImage(rgb_image.data, w, h, w * ch, QImage.Format.Format_RGB888)
             self.videoFeed.setPixmap(QPixmap.fromImage(qt_img))
+            
+            # Explicitly release OpenCV image to free memory
+            processed_frame = None
+            rgb_image = None
 
     # Calibration mouse event (commented out but kept for reference)
     """
@@ -197,6 +227,13 @@ class AirFlick(QWidget):
         smoothness = value / 10.0
         self.mouse_controller.smooth_factor = smoothness
         self.smoothnessValue.setText(f"{smoothness:.1f}")
+        
+    def closeEvent(self, event):
+        """Clean up resources when the application closes"""
+        self.stop_camera()
+        # Force garbage collection to clean up memory
+        self.force_garbage_collection()
+        super().closeEvent(event)
 
 # Helper class to track application state
 class AppState:
@@ -252,5 +289,8 @@ if __name__ == '__main__':
     safety_timer.setSingleShot(True)
     safety_timer.timeout.connect(show_main_window)
     safety_timer.start(5000)  # 5 seconds max wait
+    
+    # Final garbage collection before main loop
+    gc.collect()
     
     sys.exit(app.exec())
