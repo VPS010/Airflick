@@ -1,14 +1,16 @@
 import sys
 import cv2
 import numpy as np
-from PyQt6.QtWidgets import QApplication, QWidget, QSlider
-from PyQt6.QtCore import Qt, QTimer
+import os
+from PyQt6.QtWidgets import QApplication, QWidget, QSlider, QMainWindow
+from PyQt6.QtCore import Qt, QTimer, pyqtSlot
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6 import uic
 
 # Import our custom modules
 from hand_detection import HandDetector
 from mouse_controller import MouseController
+from welcome_screen import WelcomeScreen
 
 class AirFlick(QWidget):
     def __init__(self):
@@ -64,7 +66,7 @@ class AirFlick(QWidget):
         if not self.cap:
             self.cap = cv2.VideoCapture(0)
         if not self.timer.isActive():
-            self.videoFeed.setStyleSheet("background-color: #1E1E1E;")
+            self.videoFeed.setStyleSheet("background-color: #0f172a;")
             self.timer.start(30)
 
     def stop_camera(self):
@@ -73,7 +75,7 @@ class AirFlick(QWidget):
             self.cap = None
         self.timer.stop()
         self.videoFeed.clear()
-        self.videoFeed.setStyleSheet("border: 2px solid #00D4FF; background-color: #1E1E1E;")
+        self.videoFeed.setStyleSheet("border: 2px solid #38bdf8; background-color: #0f172a;")
 
     def start_tracking(self):
         # No calibration check needed anymore
@@ -81,12 +83,14 @@ class AirFlick(QWidget):
         #     self.gestureOutput.setText("Gesture: Please calibrate first")
         #     return
         self.start_camera()
+        self.mouse_controller.reset_tracking() # Reset for a fresh start
         self.is_tracking = True
         self.is_calibrating = False
         self.gestureOutput.setText("Gesture: Tracking started")
 
     def stop_all(self):
         self.stop_camera()
+        self.mouse_controller.reset_tracking() # Reset when stopping
         self.is_tracking = False
         self.is_calibrating = False
         self.gestureOutput.setText("Gesture: None")
@@ -116,87 +120,51 @@ class AirFlick(QWidget):
             # Process frame with hand detector
             frame, hand_landmarks = self.hand_detector.find_hands(frame)
             
-            if hand_landmarks:
-                hand_landmark = hand_landmarks[0]  # We're only using the first hand
-                
-                if self.is_tracking:
+            if self.is_tracking: # Only process if tracking is globally enabled
+                if hand_landmarks:
+                    hand_landmark = hand_landmarks[0]  # We're only using the first hand
+                    
                     # Get index finger tip position
                     index_tip = hand_landmark.landmark[self.hand_detector.mp_hands.HandLandmark.INDEX_FINGER_TIP]
                     index_pos = (int(index_tip.x * frame.shape[1]), int(index_tip.y * frame.shape[0]))
                     
-                    # Get all index finger joints for angle visualization
-                    index_dip = hand_landmark.landmark[self.hand_detector.mp_hands.HandLandmark.INDEX_FINGER_DIP]
-                    index_pip = hand_landmark.landmark[self.hand_detector.mp_hands.HandLandmark.INDEX_FINGER_PIP]
-                    index_mcp = hand_landmark.landmark[self.hand_detector.mp_hands.HandLandmark.INDEX_FINGER_MCP]
+                    # Get all index finger joints for drawing lines
+                    index_dip_lm = hand_landmark.landmark[self.hand_detector.mp_hands.HandLandmark.INDEX_FINGER_DIP]
+                    index_pip_lm = hand_landmark.landmark[self.hand_detector.mp_hands.HandLandmark.INDEX_FINGER_PIP]
+                    index_mcp_lm = hand_landmark.landmark[self.hand_detector.mp_hands.HandLandmark.INDEX_FINGER_MCP]
                     
-                    dip_pos = (int(index_dip.x * frame.shape[1]), int(index_dip.y * frame.shape[0]))
-                    pip_pos = (int(index_pip.x * frame.shape[1]), int(index_pip.y * frame.shape[0]))
-                    mcp_pos = (int(index_mcp.x * frame.shape[1]), int(index_mcp.y * frame.shape[0]))
+                    dip_pos = (int(index_dip_lm.x * frame.shape[1]), int(index_dip_lm.y * frame.shape[0]))
+                    pip_pos = (int(index_pip_lm.x * frame.shape[1]), int(index_pip_lm.y * frame.shape[0]))
+                    mcp_pos = (int(index_mcp_lm.x * frame.shape[1]), int(index_mcp_lm.y * frame.shape[0]))
                     
-                    # Calculate angles
-                    angle1 = self.hand_detector.calculate_angle_between_points(index_tip, index_dip, index_pip)
-                    angle2 = self.hand_detector.calculate_angle_between_points(index_dip, index_pip, index_mcp)
+                    # Always move cursor when tracking is active and hand is detected
+                    new_x, new_y = self.mouse_controller.move_mouse_relative(index_tip.x, index_tip.y)
+                    if new_x is not None:
+                        # Check if gesture text was "Hand not detected" and clear it or set to tracking
+                        if self.gestureOutput.text() == "Gesture: Hand not detected":
+                             self.gestureOutput.setText(f"Tracking: Index Finger")
+                        # else, it might be showing a click gesture, so don't overwrite immediately unless it's the default
+                        elif self.gestureOutput.text() != "Gesture: Left Click" and self.gestureOutput.text() != "Gesture: Right Click":
+                             self.gestureOutput.setText(f"Tracking: Index Finger")
+
+
+                    # Add visual indicator for active tracking
+                    cv2.circle(frame, index_pos, 15, (0, 255, 0), -1)  # Green circle for active tracking
+                    cv2.putText(frame, "TRACKING", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
                     
-                    # Check if index finger is straight
-                    is_straight = self.hand_detector.is_index_finger_straight(hand_landmark.landmark)
-                    
-                    # Only move cursor when index finger is straight
-                    if is_straight:
-                        # Use relative movement approach - like a conventional mouse
-                        new_x, new_y = self.mouse_controller.move_mouse_relative(index_tip.x, index_tip.y)
-                        if new_x is not None:
-                            self.gestureOutput.setText(f"Tracking: Delta X/Y relative to current position")
-                        
-                        # Add visual indicator for active tracking
-                        cv2.circle(frame, index_pos, 15, (0, 255, 0), -1)  # Green circle for active tracking
-                        cv2.putText(frame, "TRACKING", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                    else:
-                        # Not tracking because index finger is bent
-                        self.gestureOutput.setText(f"Not tracking: Straighten finger more (angles: {angle1:.1f}°, {angle2:.1f}°)")
-                        
-                        # Reset relative tracking when finger is not straight
-                        self.mouse_controller.reset_tracking()
-                        
-                        # Add visual indicator for inactive tracking
-                        cv2.circle(frame, index_pos, 15, (0, 0, 255), 2)  # Red circle outline for inactive
-                        cv2.putText(frame, "NOT TRACKING", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                    
-                    # Visualize the angles by drawing lines and showing angle values
+                    # Visualize the finger joints by drawing lines
                     cv2.line(frame, index_pos, dip_pos, (255, 255, 0), 2)
                     cv2.line(frame, dip_pos, pip_pos, (255, 255, 0), 2)
                     cv2.line(frame, pip_pos, mcp_pos, (255, 255, 0), 2)
-                    
-                    # Show angle values at each joint
-                    cv2.putText(frame, f"{angle1:.1f}°", dip_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 
-                               (0, 255, 255) if angle1 > 175 else (0, 0, 255), 2)
-                    cv2.putText(frame, f"{angle2:.1f}°", pip_pos, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 
-                               (0, 255, 255) if angle2 > 175 else (0, 0, 255), 2)
-                    
-                    # Add indicator for required straightness
-                    cv2.putText(frame, "Finger must be completely straight (>175°)", 
-                               (10, frame.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                     
                     # Detect clicks
                     frame, gesture = self.mouse_controller.detect_gestures(frame, hand_landmark)
                     if gesture:
                         self.gestureOutput.setText(f"Gesture: {gesture}")
                 
-                # Calibration section commented out
-                """
-                elif self.is_calibrating:
-                    current_step = self.calibration_steps[self.current_calibration_step]
-                    cv2.putText(
-                        frame,
-                        f"Calibrating {current_step} - Click when ready",
-                        (50, 50),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.7,
-                        (0, 255, 0),
-                        2
-                    )
-                    index_tip = hand_landmark.landmark[self.hand_detector.mp_hands.HandLandmark.INDEX_FINGER_TIP]
-                    self.mouse_controller.calibration_corners[current_step] = (index_tip.x, index_tip.y)
-                """
+                else: # Hand is not detected, but tracking is ON
+                    self.mouse_controller.reset_tracking() # Reset to prevent jumps when hand reappears
+                    self.gestureOutput.setText("Gesture: Hand not detected") 
             
             # Convert frame to QImage for display
             rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -230,8 +198,59 @@ class AirFlick(QWidget):
         self.mouse_controller.smooth_factor = smoothness
         self.smoothnessValue.setText(f"{smoothness:.1f}")
 
+# Helper class to track application state
+class AppState:
+    def __init__(self):
+        self.transition_complete = False
+
 if __name__ == '__main__':
+    # Initialize application
     app = QApplication(sys.argv)
-    window = AirFlick()
-    window.show()
+    
+    # Create main window but don't show it yet
+    main_app = AirFlick()
+    main_app.setWindowTitle("AirFlick - Innovate the way you interact")
+    
+    # Get paths to images
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    splash_image_path = os.path.join(current_dir, "4537657.jpg")  # Keep original splash image
+    logo_path = os.path.join(current_dir, "7b6148fa-18c6-4439-b089-be2a0dce14c9.png")  # Logo for welcome screen
+    
+    # Create app state to track transition
+    app_state = AppState()
+    
+    def show_main_window():
+        """Function to show main window and handle transition"""
+        if app_state.transition_complete:
+            return  # Prevent duplicate executions
+            
+        print("Showing main window")
+        app_state.transition_complete = True
+        
+        # Center the main window
+        screen_geometry = app.primaryScreen().geometry()
+        x = (screen_geometry.width() - main_app.width()) // 2
+        y = (screen_geometry.height() - main_app.height()) // 2
+        main_app.move(x, y)
+        
+        # Show main window and bring to front
+        main_app.show()
+        main_app.raise_()
+        main_app.activateWindow()
+        
+        # Force window manager to recognize and display window
+        app.processEvents()
+    
+    # Create and show welcome screen - using splash image for welcome, the logo is already in the UI
+    welcome = WelcomeScreen(splash_image_path)
+    welcome.animation_finished.connect(show_main_window)
+    welcome.centerOnScreen()
+    welcome.show()
+    
+    # Start a safety timer to ensure main window shows even if animation signal fails
+    safety_timer = QTimer()
+    safety_timer.setSingleShot(True)
+    safety_timer.timeout.connect(show_main_window)
+    safety_timer.start(5000)  # 5 seconds max wait
+    
     sys.exit(app.exec())
