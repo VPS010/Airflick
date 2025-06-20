@@ -146,10 +146,10 @@ class WelcomeScreen(QWidget):
         self.logo_bounce.setStartValue(rect)
         # Scale up slightly - using slightly larger scale factor (1.15 instead of 1.1)
         bigger_rect = QRect(
-            center_x - (rect.width() * 1.15) / 2,
-            center_y - (rect.height() * 1.15) / 2,
-            rect.width() * 1.15,
-            rect.height() * 1.15
+            int(center_x - (rect.width() * 1.15) / 2),
+            int(center_y - (rect.height() * 1.15) / 2),
+            int(rect.width() * 1.15),
+            int(rect.height() * 1.15)
         )
         self.logo_bounce.setEndValue(bigger_rect)
         self.logo_bounce.setEasingCurve(QEasingCurve.Type.OutBack)
