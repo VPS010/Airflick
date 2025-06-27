@@ -12,6 +12,7 @@ from PyQt6 import uic
 from hand_detection import HandDetector
 from mouse_controller import MouseController
 from welcome_screen import WelcomeScreen
+from screenshot_trigger import ScreenshotTrigger
 
 class AirFlick(QWidget):
     def __init__(self):
@@ -28,6 +29,7 @@ class AirFlick(QWidget):
         # Initialize our modules
         self.hand_detector = HandDetector()
         self.mouse_controller = MouseController()
+        self.screenshot_trigger = ScreenshotTrigger(self.hand_detector)
         
         # Memory management - use the hand_detector from MouseController to avoid duplicate instances
         self.mouse_controller.hand_detector = self.hand_detector
@@ -53,9 +55,10 @@ class AirFlick(QWidget):
         self.settingsButton.clicked.connect(self.show_settings)
         
         # Setup sensitivity slider
-        self.sensitivitySlider.setMinimum(10)
-        self.sensitivitySlider.setMaximum(50)
-        self.sensitivitySlider.setValue(int(self.mouse_controller.scaling_factor * 10))
+        self.sensitivitySlider.setMinimum(2)
+        self.sensitivitySlider.setMaximum(8)
+        self.mouse_controller.scaling_factor = 4.0
+        self.sensitivitySlider.setValue(int(self.mouse_controller.scaling_factor))
         self.sensitivitySlider.valueChanged.connect(self.update_sensitivity)
         self.sensitivityValue.setText(f"{self.mouse_controller.scaling_factor:.1f}")
         
@@ -136,6 +139,18 @@ class AirFlick(QWidget):
             frame = frame.copy()
             frame = cv2.flip(frame, 1)
             
+            # Preprocess frame for lighting robustness (CLAHE on L-channel)
+            def preprocess_frame(frame):
+                import cv2
+                lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+                l, a, b = cv2.split(lab)
+                clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+                cl = clahe.apply(l)
+                merged = cv2.merge((cl, a, b))
+                processed = cv2.cvtColor(merged, cv2.COLOR_LAB2BGR)
+                return processed
+            frame = preprocess_frame(frame)
+            
             # Process frame with hand detector
             processed_frame, hand_landmarks = self.hand_detector.find_hands(frame)
             
@@ -164,24 +179,38 @@ class AirFlick(QWidget):
                         # Skip mouse movement when in scroll mode
                         pass
                     else:
-                        # Move cursor when tracking is active, hand is detected, and not in scroll mode
-                        new_x, new_y = self.mouse_controller.move_mouse_relative(index_tip.x, index_tip.y)
-                        if new_x is not None:
-                            # Check if gesture text was "Hand not detected" and clear it or set to tracking
-                            if self.gestureOutput.text() == "Gesture: Hand not detected":
-                                 self.gestureOutput.setText(f"Tracking: Index Finger")
-                            # else, it might be showing a click gesture, so don't overwrite immediately unless it's the default
-                            elif self.gestureOutput.text() != "Gesture: Left Click" and self.gestureOutput.text() != "Gesture: Right Click" and self.gestureOutput.text() != "Gesture: Scroll Up" and self.gestureOutput.text() != "Gesture: Scroll Down":
-                                 self.gestureOutput.setText(f"Tracking: Index Finger")
+                        # Screenshot trigger: check for all-fingers-pinch gesture
+                        screenshot_detected = False
+                        if self.screenshot_trigger:
+                            screenshot_detected = self.screenshot_trigger.check_and_trigger(hand_landmark.landmark)
 
-                    # Add visual indicator for active tracking
-                    cv2.circle(processed_frame, index_pos, 15, (0, 255, 0), -1)  # Green circle for active tracking
-                    cv2.putText(processed_frame, "TRACKING", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-                    
-                    # Visualize the finger joints by drawing lines
-                    cv2.line(processed_frame, index_pos, dip_pos, (255, 255, 0), 2)
-                    cv2.line(processed_frame, dip_pos, pip_pos, (255, 255, 0), 2)
-                    cv2.line(processed_frame, pip_pos, mcp_pos, (255, 255, 0), 2)
+                        # Show screenshot gesture name if detected
+                        if screenshot_detected:
+                            cv2.rectangle(processed_frame, (10, 10), (180, 60), (0, 200, 0), -1)
+                            cv2.putText(processed_frame, 'SCREENSHOT', (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255,255,255), 3, cv2.LINE_AA)
+
+                        # Only move cursor and show tracking indicator if index finger is straight
+                        if self.hand_detector.is_index_finger_straight(hand_landmark.landmark):
+                            new_x, new_y = self.mouse_controller.move_mouse_relative(index_tip.x, index_tip.y)
+                            if new_x is not None:
+                                # Check if gesture text was "Hand not detected" and clear it or set to tracking
+                                if self.gestureOutput.text() == "Gesture: Hand not detected":
+                                     self.gestureOutput.setText(f"Tracking: Index Finger")
+                                # else, it might be showing a click gesture, so don't overwrite immediately unless it's the default
+                                elif self.gestureOutput.text() != "Gesture: Left Click" and self.gestureOutput.text() != "Gesture: Right Click" and self.gestureOutput.text() != "Gesture: Scroll Up" and self.gestureOutput.text() != "Gesture: Scroll Down":
+                                     self.gestureOutput.setText(f"Tracking: Index Finger")
+                            # Add visual indicator for active tracking
+                            cv2.circle(processed_frame, index_pos, 15, (0, 255, 0), -1)  # Green circle for active tracking
+                            cv2.putText(processed_frame, "TRACKING", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+                            # Visualize the finger joints by drawing lines
+                            cv2.line(processed_frame, index_pos, dip_pos, (255, 255, 0), 2)
+                            cv2.line(processed_frame, dip_pos, pip_pos, (255, 255, 0), 2)
+                            cv2.line(processed_frame, pip_pos, mcp_pos, (255, 255, 0), 2)
+                        else:
+                            # If finger is not straight, stop tracking and reset mouse movement, do not show tracking visuals
+                            self.mouse_controller.reset_tracking()
+                            self.gestureOutput.setText("Gesture: Index Finger Folded")
+                            # Optionally, you could clear or gray out the tracking visuals here if needed
                     
                     # Detect gestures (clicks and scrolls)
                     processed_frame, gesture = self.mouse_controller.detect_gestures(processed_frame, hand_landmark)

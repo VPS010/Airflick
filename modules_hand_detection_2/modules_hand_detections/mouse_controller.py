@@ -15,7 +15,7 @@ class MouseController:
         self.click_cooldown = 0.5  # seconds between clicks to prevent spamming
         
         # Add scaling factor to amplify hand movements
-        self.scaling_factor = 2.0  # Adjust this value to change sensitivity
+        self.scaling_factor = 4.0  # Default sensitivity increased from 2.0 to 4.0
         
         # Calibration points (not needed for relative mode, but kept for compatibility)
         self.calibration_corners = {
@@ -32,8 +32,8 @@ class MouseController:
         
         # For scrolling
         self.last_scroll_time = 0
-        self.scroll_cooldown = 0.2  # seconds between scroll actions
-        self.scroll_amount = 2  # Number of "clicks" to scroll
+        self.scroll_cooldown = 0.05  # seconds between scroll actions (smoother)
+        self.scroll_amount = 1  # Finer scroll increments for smoothness
         
         # Create a single instance of HandDetector to reuse
         self.hand_detector = HandDetector()
