@@ -4,7 +4,7 @@ import numpy as np
 import os
 import gc  # Import garbage collector
 from PyQt6.QtWidgets import QApplication, QWidget
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QTimer, QObject, QEvent
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6 import uic
 
@@ -13,6 +13,7 @@ from hand_detection import HandDetector
 from mouse_controller import MouseController
 from welcome_screen import WelcomeScreen
 from screenshot_trigger import ScreenshotTrigger
+from virtual_keyboard import VirtualKeyboard
 
 class AirFlick(QWidget):
     def __init__(self):
@@ -27,6 +28,8 @@ class AirFlick(QWidget):
         self.hand_detector = HandDetector()
         self.mouse_controller = MouseController()
         self.screenshot_trigger = ScreenshotTrigger(self.hand_detector)
+        self.virtual_keyboard = VirtualKeyboard()
+        self.virtual_keyboard_enabled = False
         
         self.mouse_controller.hand_detector = self.hand_detector
         
@@ -65,11 +68,30 @@ class AirFlick(QWidget):
         self.high_light_filter_enabled = False
         self.highLightToggle.toggled.connect(self.toggle_high_light_filter)
         self.highLightToggle.setChecked(self.high_light_filter_enabled)
+
+        # Virtual keyboard toggle
+        self.virtualKeyboardToggle.toggled.connect(self.toggle_virtual_keyboard)
+        self.virtualKeyboardToggle.setChecked(self.virtual_keyboard_enabled)
+        
+        # Install event filter at startup if virtual keyboard is enabled
+        if self.virtual_keyboard_enabled:
+            app = QApplication.instance()
+            app.installEventFilter(self)
         
         self.gc_timer = QTimer()
         self.gc_timer.timeout.connect(self.force_garbage_collection)
         self.gc_timer.start(60000)
         
+    def toggle_virtual_keyboard(self, checked):
+        self.virtual_keyboard_enabled = checked
+        status = "ON" if checked else "OFF"
+        self.gestureOutput.setText(f"Virtual Keyboard: {status}")
+        if checked:
+            self.virtual_keyboard.show()
+        elif self.virtual_keyboard.isVisible():
+            self.virtual_keyboard.hide()
+            self.virtual_keyboard.active_input = None
+
     def start_camera(self):
         if not self.cap:
             self.cap = cv2.VideoCapture(0)
@@ -103,6 +125,15 @@ class AirFlick(QWidget):
         
     def show_settings(self):
         self.gestureOutput.setText("Gesture: Settings button clicked")
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Type.FocusIn and self.virtual_keyboard_enabled:
+            if hasattr(obj, 'text') and hasattr(obj, 'setText'):
+                self.virtual_keyboard.set_active_input(obj)
+        elif event.type() == QEvent.Type.FocusOut:
+            if self.virtual_keyboard.active_input == obj:
+                self.virtual_keyboard.set_active_input(None)
+        return super().eventFilter(obj, event)
 
     def preprocess_for_hand_detection(self, frame):
         lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
