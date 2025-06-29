@@ -1,0 +1,11 @@
+# Ignore virtual environments
+myenv/
+
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+
+# Ignore backups or other common temp files
+*.bak
+*.swp
+.DS_Store

@@ -1,0 +1,7 @@
+opencv-python
+numpy
+mediapipe==0.10.9
+PyQt6
+pynput
+pyautogui
+
