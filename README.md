@@ -316,27 +316,52 @@ keyboard.
 sequenceDiagram
     participant User
     participant Qt
+    participant WelcomeScreen
     participant AirFlick
     participant OpenCV
     participant MediaPipe
     participant MouseCtl
+    participant OS
 
-    User->>Qt: launch python main.py
-    Qt->>WelcomeScreen: show logo (async)
-    WelcomeScreen-->>Qt: emit animation_finished
-    Qt->>AirFlick: show main UI
-    User->>AirFlick: press Start Tracking
+    User->>Qt: Launch app (python main.py)
+    Qt->>WelcomeScreen: Show animated logo (async)
+    WelcomeScreen-->>Qt: animation_finished
+    Qt->>AirFlick: Show main window
     AirFlick->>OpenCV: VideoCapture.open(0)
-    loop every 30 ms
+    AirFlick->>Qt: Enable “Start Tracking” button
+
+    User->>AirFlick: Click Start Tracking
+    AirFlick->>Qt: Disable Start, enable Stop
+
+    loop every 30 ms (UpdateTimer)
         AirFlick->>OpenCV: cap.read()
-        OpenCV-->>AirFlick: raw_frame
-        AirFlick->>AirFlick: preprocess (flip, filter)
-        AirFlick->>MediaPipe: Hands.process(rgb_frame)
-        MediaPipe-->>AirFlick: landmarks
-        AirFlick->>MouseCtl: move_mouse_relative(), detect_gestures()
-        MouseCtl-->>AirFlick: gesture (optional)
-        AirFlick->>Qt: update QLabel with QImage
+        OpenCV-->>AirFlick: frame_bgr
+        AirFlick->>AirFlick: flip (mirror) frame
+        AirFlick->>AirFlick: apply lighting filter (optional)
+        AirFlick->>MediaPipe: Hands.process(frame_rgb)
+        alt Hand detected
+            MediaPipe-->>AirFlick: 21 landmarks
+            AirFlick->>MouseCtl: move_mouse_relative(landmarks)
+            MouseCtl-->>AirFlick: {cursorΔ, gesture?}
+            AirFlick->>OS: pyautogui.moveRel(cursorΔ)
+            opt Gesture present
+                alt Click
+                    AirFlick->>OS: pyautogui.click()
+                else Scroll
+                    AirFlick->>OS: pyautogui.scroll(amount)
+                else Screenshot
+                    AirFlick->>OS: PrintScreen
+                end
+            end
+        else No hand
+            MediaPipe-->>AirFlick: null
+        end
+        AirFlick->>Qt: Update video preview (QLabel)
     end
+
+    User->>AirFlick: Click Stop
+    AirFlick->>OpenCV: release()
+    AirFlick->>Qt: Close window
 ```
 
 ---
