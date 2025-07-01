@@ -20,18 +20,25 @@ class ScreenshotTrigger:
         self.cooldown = 2  # seconds between triggers to avoid spamming
 
     def check_and_trigger(self, landmarks):
+        """Return True if a screenshot gesture was detected and the hotkey was dispatched.
+
+        Args:
+            landmarks: List of hand landmark objects from MediaPipe.
+
+        The method also rate-limits firing the hotkey using ``self.cooldown`` to
+        prevent accidental screenshot spamming.
         """
-        Call this from your main loop, passing hand landmarks.
-        If the gesture is detected, triggers the screenshot hotkey.
-        """
+        detected = False
         if self.is_all_fingers_pinch(landmarks):
             now = time.time()
             if not self.triggered or (now - self.last_trigger_time > self.cooldown):
                 self.triggered = True
                 self.last_trigger_time = now
+                detected = True
                 threading.Thread(target=self.send_screenshot_hotkey, daemon=True).start()
         else:
             self.triggered = False
+        return detected
 
     def calculate_distance(self, point1, point2):
         """Calculate normalized Euclidean distance between two landmarks."""
