@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import os
 import gc  # Import garbage collector
-from PyQt6.QtWidgets import QApplication, QWidget
+from PyQt6.QtWidgets import QApplication, QWidget, QCheckBox
 from PyQt6.QtCore import QTimer, QObject, QEvent
 from PyQt6.QtGui import QImage, QPixmap
 from PyQt6 import uic
@@ -72,6 +72,21 @@ class AirFlick(QWidget):
         # Virtual keyboard toggle
         self.virtualKeyboardToggle.toggled.connect(self.toggle_virtual_keyboard)
         self.virtualKeyboardToggle.setChecked(self.virtual_keyboard_enabled)
+
+        # Screenshot gesture toggle (default OFF)
+        self.screenshot_enabled = False
+        # Try to get checkbox from UI file if already present
+        self.screenshotToggle: QCheckBox | None = getattr(self, 'screenshotToggle', None)
+        if self.screenshotToggle is None:
+            # Create at runtime and append to left panel
+            self.screenshotToggle = QCheckBox("Enable Screenshot Gesture")
+            self.screenshotToggle.setObjectName("screenshotToggle")
+            self.screenshotToggle.setStyleSheet("font-size: 13px;")
+            self.screenshotToggle.setToolTip("Toggle detection of the 5-finger pinch screenshot gesture")
+            if hasattr(self, 'leftPanelLayout'):
+                self.leftPanelLayout.addWidget(self.screenshotToggle)
+        self.screenshotToggle.toggled.connect(self.toggle_screenshot_detection)
+        self.screenshotToggle.setChecked(self.screenshot_enabled)
         
         # Install event filter at startup if virtual keyboard is enabled
         if self.virtual_keyboard_enabled:
@@ -81,6 +96,12 @@ class AirFlick(QWidget):
         self.gc_timer = QTimer()
         self.gc_timer.timeout.connect(self.force_garbage_collection)
         self.gc_timer.start(60000)
+
+    def toggle_screenshot_detection(self, checked):
+        """Enable/disable screenshot gesture detection."""
+        self.screenshot_enabled = checked
+        status = "ON" if checked else "OFF"
+        self.gestureOutput.setText(f"Screenshot Detection: {status}")
         
     def toggle_virtual_keyboard(self, checked):
         self.virtual_keyboard_enabled = checked
@@ -173,7 +194,7 @@ class AirFlick(QWidget):
             hand_landmark = hand_landmarks[0]
             
             if not (self.hand_detector.is_thumbs_up(hand_landmark.landmark) or self.hand_detector.is_thumbs_down(hand_landmark.landmark)):
-                if self.screenshot_trigger.check_and_trigger(hand_landmark.landmark):
+                if self.screenshot_enabled and self.screenshot_trigger.check_and_trigger(hand_landmark.landmark):
                     cv2.rectangle(processed_frame, (10, 10), (180, 60), (0, 200, 0), -1)
                     cv2.putText(processed_frame, 'SCREENSHOT', (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255,255,255), 3, cv2.LINE_AA)
 

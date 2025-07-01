@@ -499,6 +499,19 @@ QCheckBox::indicator {
               </property>
              </widget>
             </item>
+            <item row="4" column="0" colspan="2">
+             <widget class="QCheckBox" name="screenshotToggle">
+              <property name="styleSheet">
+               <string notr="true">font-size: 13px;</string>
+              </property>
+              <property name="text">
+               <string>Enable Screenshot Gesture</string>
+              </property>
+              <property name="checked">
+               <bool>false</bool>
+              </property>
+             </widget>
+            </item>
           </layout>
           </item>
           <item>
